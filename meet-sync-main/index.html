@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>약속 잡기 도우미</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    color: #222;
+    background: #fafafa;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+
+  .steps { display: flex; gap: 6px; margin-bottom: 14px; }
+  .steps button {
+    padding: 8px 16px; font-size: 14px; cursor: pointer;
+    border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #555;
+  }
+  .steps button.active { background: #222; border-color: #222; color: #fff; }
+
+  .map {
+    position: relative; width: 720px; max-width: 100%; height: 420px;
+    overflow: hidden; border: 1px solid #ccc; border-radius: 8px;
+    background: #e9e9e9; cursor: grab;
+  }
+  .map.grabbing { cursor: grabbing; }
+  .map-layer { position: absolute; left: 0; top: 0; }
+  .tile { position: absolute; width: 256px; height: 256px; }
+  .pin {
+    position: absolute; transform: translate(-50%, -100%);
+    padding: 3px 9px; font-size: 12px; white-space: nowrap;
+    background: #2f6df6; color: #fff; border-radius: 999px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+  .pin::after {
+    content: ''; position: absolute; left: 50%; top: 100%;
+    transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #2f6df6;
+  }
+  .pin.mid { background: #e8590c; border-radius: 4px; font-weight: 700; }
+  .pin.mid::after { border-top-color: #e8590c; }
+  .map-info { font-size: 13px; color: #555; margin: 8px 0 0; }
+  .map-note { font-size: 12px; color: #999; margin: 6px 0 20px; }
+
+  .add { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .add input {
+    padding: 8px 10px; font-size: 14px;
+    border: 1px solid #ccc; border-radius: 6px; width: 160px;
+  }
+  .add button {
+    padding: 8px 14px; font-size: 14px; cursor: pointer;
+    border: 1px solid #333; border-radius: 6px; background: #333; color: #fff;
+  }
+  .notice { font-size: 13px; color: #c0392b; min-height: 18px; margin-bottom: 10px; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px 6px 14px; font-size: 14px; cursor: pointer;
+    border: 1px solid #ccc; border-radius: 999px; background: #fff; color: #444;
+  }
+  .tab.active { background: #2f6df6; border-color: #2f6df6; color: #fff; }
+  .tab .state { font-size: 11px; opacity: 0.8; }
+  .tab .remove {
+    font-size: 14px; line-height: 1; padding: 0 3px;
+    border-radius: 50%; opacity: 0.55;
+  }
+  .tab .remove:hover { opacity: 1; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+    max-width: 720px; margin-bottom: 8px;
+  }
+  .toolbar button {
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+    border: 1px solid #2f6df6; border-radius: 6px; background: #fff; color: #2f6df6;
+  }
+  #count { font-size: 13px; color: #444; }
+  .hint { font-size: 12px; color: #888; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 52px repeat(7, 1fr);
+    gap: 2px;
+    max-width: 720px;
+    margin-bottom: 20px;
+  }
+  .head, .hour {
+    font-size: 12px; color: #666;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 0;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .head:hover, .hour:hover { background: #eaeff9; color: #2f6df6; }
+  .corner { cursor: default; }
+  .corner:hover { background: none; }
+  .cell {
+    height: 26px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cell.on { background: #2f6df6; border-color: #2f6df6; }
+
+  .result {
+    max-width: 720px; padding: 14px 16px;
+    background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+  }
+  .card {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+    border: 1px solid #e0e0e0; border-radius: 6px; background: #fff;
+  }
+  .card:last-child { margin-bottom: 0; }
+  .card.chosen { border-color: #2f6df6; background: #eef3fe; }
+  .card .when { font-size: 15px; font-weight: 600; min-width: 116px; }
+  .card .who { font-size: 13px; color: #555; }
+  .card .miss { font-size: 12px; color: #c0392b; }
+  .card .mark { margin-left: auto; font-size: 13px; color: #2f6df6; }
+  .empty { color: #888; font-size: 14px; margin: 0; }
+
+  .filters { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filters button {
+    padding: 5px 12px; font-size: 13px; cursor: pointer;
+    border: 1px solid #ccc; border-radius: 999px; background: #fff; color: #555;
+  }
+  .filters button.active { background: #2f6df6; border-color: #2f6df6; color: #fff; }
+
+  #places { max-width: 720px; margin-top: 24px; }
+  #regionName { font-size: 16px; margin: 0 0 4px; }
+  .region-note { font-size: 12px; color: #888; margin: 0 0 10px; }
+  .card.static { cursor: default; }
+  .card .chip {
+    font-size: 12px; color: #2f6df6; background: #eef3fe;
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .card .walk { font-size: 13px; color: #555; }
+  .card .name { font-size: 15px; font-weight: 600; min-width: 150px; }
+
+  .add-place { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  .add-place input, .add-place select {
+    padding: 7px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px;
+  }
+  .add-place input { width: 160px; }
+  .add-place button {
+    padding: 7px 14px; font-size: 14px; cursor: pointer;
+    border: 1px solid #333; border-radius: 6px; background: #333; color: #fff;
+  }
+  .arming { color: #e8590c; font-size: 13px; }
+
+  .card.voted { border-color: #2f6df6; background: #eef3fe; }
+  .card .votes { font-size: 13px; font-weight: 600; color: #2f6df6; margin-left: auto; }
+  .card .voters { font-size: 12px; color: #666; }
+
+  .confirm-row { margin-top: 18px; }
+  .confirm-row button {
+    padding: 10px 20px; font-size: 15px; cursor: pointer;
+    border: 1px solid #2f6df6; border-radius: 6px; background: #2f6df6; color: #fff;
+  }
+
+  .confirmed {
+    max-width: 720px; padding: 20px;
+    background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+  }
+  .confirmed dl { margin: 0 0 14px; }
+  .confirmed dt { font-size: 12px; color: #888; margin-top: 12px; }
+  .confirmed dt:first-child { margin-top: 0; }
+  .confirmed dd { margin: 2px 0 0; font-size: 17px; font-weight: 600; }
+  .reason { font-size: 13px; color: #555; margin: 0 0 16px; padding: 10px 12px;
+    background: #f4f6fa; border-radius: 6px; }
+  .confirm-actions { display: flex; gap: 8px; }
+  .confirm-actions button {
+    padding: 8px 14px; font-size: 14px; cursor: pointer;
+    border: 1px solid #ccc; border-radius: 6px; background: #fff; color: #444;
+  }
+  .confirm-actions .danger { border-color: #c0392b; color: #c0392b; }
+</style>
+</head>
+<body>
+
+<h1>약속 잡기 도우미</h1>
+
+<div id="steps" class="steps"></div>
+
+<div id="peopleArea">
+<div class="add">
+  <input id="nameInput" type="text" placeholder="이름" maxlength="10">
+  <button id="addButton">참여자 추가</button>
+</div>
+<div id="notice" class="notice"></div>
+
+<div id="tabs" class="tabs"></div>
+</div>
+
+<section id="step1">
+  <div id="toolbar" class="toolbar"></div>
+  <div id="grid" class="grid"></div>
+
+  <div class="result">
+    <h2>최적 시간</h2>
+    <div id="candidates"></div>
+  </div>
+</section>
+
+<section id="step2">
+  <div id="map" class="map"><div id="mapLayer" class="map-layer"></div></div>
+  <p id="mapInfo" class="map-info"></p>
+  <p class="map-note">지도 © OpenStreetMap 기여자 · 지도를 클릭해 내 출발지를 찍습니다</p>
+
+  <section id="places">
+    <h2 id="regionName"></h2>
+    <p id="regionNote" class="region-note"></p>
+    <div id="categoryFilter" class="filters"></div>
+    <div id="placeCards"></div>
+
+    <div class="add-place">
+      <input id="placeName" type="text" placeholder="장소 이름" maxlength="20">
+      <select id="placeCategory"></select>
+      <button id="placeAdd">추가</button>
+      <span id="placeHint" class="hint"></span>
+    </div>
+
+    <div class="confirm-row">
+      <button id="confirmButton">확정하기</button>
+    </div>
+  </section>
+</section>
+
+<section id="step3">
+  <div id="confirmBox"></div>
+</section>
+
+<script>
+var STORAGE_KEY = 'meetup-planner';
+var START_HOUR = 12;
+var END_HOUR = 22;
+var DAY_COUNT = 7;
+var MAX_PARTICIPANTS = 6;
+var WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+var CATEGORIES = ['맛집', '카페', '술집', '놀거리'];
+
+/* 지역 중심에서 이만큼 떨어진 자리에 후보를 놓는다 (카테고리 순서 x 네 곳) */
+var PLACE_OFFSETS = [
+  [0.0016, 0.0010], [-0.0012, 0.0022], [0.0025, -0.0018], [-0.0021, -0.0013],
+  [0.0008, 0.0031], [-0.0030, 0.0007], [0.0019, -0.0034], [-0.0009, -0.0028],
+  [0.0034, 0.0019], [-0.0026, 0.0035], [0.0011, -0.0009], [-0.0037, -0.0021],
+  [0.0022, 0.0043], [-0.0015, -0.0040], [0.0040, -0.0006], [-0.0043, 0.0014]
+];
+
+/* [지역, 위도, 경도, 맛집, 카페, 술집, 놀거리] */
+var REGIONS = [
+  ['합정', 37.5495, 126.9137,
+    '우동카덴|미도인|합정옥|카세트',
+    '앤트러사이트|카페꼼마|테일러커피|딥블루레이크',
+    '생활맥주 합정점|합정포차|와인바 쥬르|하이볼바 온',
+    '메세나폴리스|망원한강공원|보드게임카페 룰루|방탈출 키이스케이프'],
+  ['홍대입구', 37.5570, 126.9245,
+    '연남서식당|바스버거|하카타분코|고삼이',
+    '커피리브레|알레그리아|프릳츠 연남|테일러커피 홍대',
+    '홍대포차|고래unbar|맥주바 오비|이자카야 텐',
+    '홍대 놀이터|상상마당|코인노래방 벅스|VR스퀘어'],
+  ['신촌', 37.5551, 126.9368,
+    '신촌황소곱창|공복식당|미미네|형제갈비',
+    '커피나무|스타벅스 신촌|카페 노티드|블루샥 신촌',
+    '신촌포차거리|호프 마루|칭따오하우스|술상',
+    '메가박스 신촌|신촌 물총거리|코노 신촌|당구장 큐'],
+  ['이대', 37.5567, 126.9464,
+    '이대 칼국수|오븐앤그릴|스시노 이대|삼첩분식',
+    '카페 이화|프릳츠 이대|폴바셋 이대|투썸 이대',
+    '이대 와인바|치어스 이대|하이볼 이대|포차 이화',
+    '이화벽화거리|아트하우스 모모|보드게임 이대|필름카메라 상점'],
+  ['공덕', 37.5443, 126.9515,
+    '공덕 족발골목|마포갈매기|현대옥|공덕시장 전집',
+    '카페 그린랩|커피빈 공덕|스타벅스 공덕|디저트39',
+    '공덕포차|만선호프|공덕 이자카야|생맥주 공덕',
+    '경의선숲길|롯데시네마 공덕|스크린골프 공덕|볼링장 마포'],
+  ['여의도', 37.5216, 126.9243,
+    '여의도 콩국수|진주집|여의도 순대국|더현대 푸드코트',
+    '카페 마마스|스타벅스 IFC|블루보틀 여의도|커피앳웍스',
+    '여의도 호프|치킨플러스|와인앤바|맥주창고',
+    '여의도한강공원|IFC몰|CGV 여의도|샛강생태공원'],
+  ['종로', 37.5720, 126.9793,
+    '이문설농탕|광장시장 빈대떡|피맛골 해장국|종로 육회골목',
+    '어니언 안국|프릳츠 도화|콤포즈 종로|스타벅스 종각',
+    '종로 포장마차|피맛골 막걸리|호프 종로3가|낙원상가 술집',
+    '인사동거리|익선동 골목|보신각|서울공예박물관'],
+  ['을지로', 37.5661, 126.9925,
+    '을지면옥|을지로 골뱅이|양미옥|우래옥',
+    '호랑이 커피|커피한약방|잇다 카페|을지다방',
+    '노가리골목|십분의일|뮤지엄바|OB베어',
+    '세운상가|을지로 인쇄골목|힙지로 편집숍|레코드바'],
+  ['명동', 37.5636, 126.9827,
+    '명동교자|하동관|명동 돈까스|백제삼계탕',
+    '카페 데미타스|스타벅스 명동|폴바셋 명동|투썸 명동',
+    '명동 이자카야|호프 명동|와인바 명동|사케바 후지',
+    '명동거리|명동성당|난타극장|롯데백화점 본점'],
+  ['이태원', 37.5346, 126.9946,
+    '이태원 케밥|바토스|린야 라멘|부자피자',
+    '앤트러사이트 이태원|헬카페|커피리브레 이태원|올드페리도넛',
+    '이태원 펍거리|사우스사이드팔러|더부스|루프탑바 하이',
+    '경리단길|리움미술관|해방촌 계단|보광동 골목'],
+  ['강남', 37.4979, 127.0276,
+    '강남면옥|하이디라오 강남|봉피양|강남 오마카세',
+    '테라로사 강남|커피빈 강남역|블루보틀 강남|카페 노티드 강남',
+    '강남 포차|치킨앤비어|와인바 강남|하이볼 강남',
+    'CGV 강남|코인노래방 강남|방탈출 강남|볼링장 강남'],
+  ['역삼', 37.5006, 127.0364,
+    '역삼 순대국|백채김치찌개|역삼 초밥|한우람',
+    '스타벅스 역삼|커피스미스|폴바셋 역삼|이디야 역삼',
+    '역삼 호프|이자카야 역삼|포차 역삼|맥주바 역삼',
+    '당구장 역삼|스크린골프 역삼|보드게임 역삼|필라테스 역삼'],
+  ['선릉', 37.5045, 127.0489,
+    '선릉 갈비집|선릉 파스타|삼정순두부|선릉 국밥',
+    '카페 선릉|투썸 선릉|스타벅스 선릉|커피빈 선릉',
+    '선릉 포차|호프 선릉|와인바 선릉|이자카야 선릉',
+    '선정릉|코노 선릉|스크린야구 선릉|보드게임 선릉'],
+  ['삼성', 37.5088, 127.0631,
+    '봉은사 국수|삼성동 갈비|코엑스 푸드코트|현대백화점 식당가',
+    '스타벅스 코엑스|카페 마마스 삼성|블루보틀 삼성|폴바셋 코엑스',
+    '삼성동 포차|이자카야 삼성|와인바 코엑스|호프 삼성',
+    '별마당도서관|메가박스 코엑스|코엑스 아쿠아리움|봉은사'],
+  ['잠실', 37.5133, 127.1000,
+    '잠실 밥집|송리단길 파스타|잠실 냉면|롯데월드몰 식당가',
+    '카페 어반|스타벅스 잠실|송리단길 카페|투썸 잠실',
+    '잠실 포차|석촌호수 호프|이자카야 잠실|와인바 송리단',
+    '롯데월드|석촌호수|서울스카이|롯데시네마 월드타워'],
+  ['건대입구', 37.5403, 127.0700,
+    '건대 양꼬치|화양리 곱창|건대 초밥|맛닭꼬',
+    '카페 건대|스타벅스 건대|투썸 건대|커피빈 건대',
+    '건대 포차거리|맥주창고 건대|이자카야 건대|하이볼 건대',
+    '커먼그라운드|롯데시네마 건대|코노 건대|방탈출 건대'],
+  ['성수', 37.5446, 127.0559,
+    '성수 갈비|소문난성수감자탕|정육식당 성수|성수 파스타',
+    '대림창고|어니언 성수|센터커피|블루보틀 성수',
+    '성수 브루어리|맥주바 성수|와인바 성수|포차 성수',
+    '서울숲|성수 편집숍거리|디뮤지엄|팝업스토어 거리'],
+  ['왕십리', 37.5613, 127.0374,
+    '왕십리 곱창골목|마장동 한우|왕십리 감자탕|엔터식스 식당가',
+    '카페 왕십리|스타벅스 왕십리|투썸 왕십리|이디야 왕십리',
+    '왕십리 포차|호프 왕십리|이자카야 왕십리|맥주바 성동',
+    'CGV 왕십리|엔터식스|볼링장 왕십리|살곶이체육공원'],
+  ['사당', 37.4766, 126.9816,
+    '사당 곱창|이수 칼국수|사당 초밥|남현동 백반',
+    '카페 사당|스타벅스 사당|투썸 이수|커피빈 사당',
+    '사당 포차거리|호프 사당|이자카야 사당|와인바 이수',
+    '아트나인 이수|관악산 입구|코노 사당|볼링장 사당'],
+  ['신림', 37.4842, 126.9296,
+    '신림 순대타운|백순대|신림 돈까스|양평해장국',
+    '카페 신림|스타벅스 신림|투썸 신림|이디야 신림',
+    '신림 포차|호프 신림|이자카야 신림|맥주바 신림',
+    '롯데시네마 신림|코노 신림|보드게임 신림|도림천 산책로']
+];
+
+var MAP_ZOOM = 14;
+var TILE_SIZE = 256;
+var MAP_WIDTH = 720;
+var MAP_HEIGHT = 420;
+var DEFAULT_CENTER = { lat: 37.5500, lng: 126.9500 };
+
+var state = loadState();
+var dragging = false;
+var dragMode = 'paint';
+var mapDrag = null;
+var categoryFilter = '전체';
+var pickingPlace = false;
+
+/* ---------- 날짜 ---------- */
+
+function formatDate(date) {
+  var month = String(date.getMonth() + 1).padStart(2, '0');
+  var day = String(date.getDate()).padStart(2, '0');
+  return date.getFullYear() + '-' + month + '-' + day;
+}
+
+function makeDates() {
+  var today = new Date();
+  var dates = [];
+  for (var i = 0; i < DAY_COUNT; i++) {
+    dates.push(formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + i)));
+  }
+  return dates;
+}
+
+function weekdayOf(date) {
+  var parts = date.split('-');
+  return WEEKDAY_NAMES[new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getDay()];
+}
+
+function shortLabel(date) {
+  var parts = date.split('-');
+  return Number(parts[1]) + '/' + Number(parts[2]);
+}
+
+function slotKey(date, hour) {
+  return date + '|' + hour;
+}
+
+/* ---------- 저장 ---------- */
+
+function emptyState() {
+  return {
+    dates: makeDates(),
+    participants: [],
+    activeId: null,
+    chosenSlot: null,
+    step: 1,
+    map: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
+    customPlaces: [],
+    confirmed: null
+  };
+}
+
+function readPoint(value) {
+  if (!value || typeof value !== 'object') return null;
+  if (typeof value.lat !== 'number' || typeof value.lng !== 'number') return null;
+  if (!isFinite(value.lat) || !isFinite(value.lng)) return null;
+  if (value.lat <= -85 || value.lat >= 85 || value.lng <= -180 || value.lng >= 180) return null;
+  return { lat: value.lat, lng: value.lng };
+}
+
+function isDateString(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function loadState() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyState();
+
+    var saved = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object') return emptyState();
+    if (!Array.isArray(saved.dates) || saved.dates.length !== DAY_COUNT) return emptyState();
+    if (!saved.dates.every(isDateString)) return emptyState();
+    if (!Array.isArray(saved.participants)) return emptyState();
+
+    var participants = [];
+    for (var i = 0; i < saved.participants.length; i++) {
+      var person = saved.participants[i];
+      if (!person || typeof person !== 'object') return emptyState();
+      if (typeof person.id !== 'string' || typeof person.name !== 'string') return emptyState();
+      if (!Array.isArray(person.slots)) return emptyState();
+      participants.push({
+        id: person.id,
+        name: person.name,
+        slots: person.slots.filter(function (slot) { return typeof slot === 'string'; }),
+        submitted: person.submitted === true,
+        origin: readPoint(person.origin),
+        vote: typeof person.vote === 'string' ? person.vote : null
+      });
+    }
+
+    var activeId = null;
+    for (var j = 0; j < participants.length; j++) {
+      if (participants[j].id === saved.activeId) activeId = saved.activeId;
+    }
+    if (!activeId && participants.length > 0) activeId = participants[0].id;
+
+    var chosenSlot = null;
+    if (saved.chosenSlot && typeof saved.chosenSlot === 'object'
+        && isDateString(saved.chosenSlot.date)
+        && typeof saved.chosenSlot.hour === 'number') {
+      chosenSlot = { date: saved.chosenSlot.date, hour: saved.chosenSlot.hour };
+    }
+
+    var step = (saved.step === 2 || saved.step === 3) ? saved.step : 1;
+
+    var map = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng };
+    if (saved.map && typeof saved.map.lat === 'number' && typeof saved.map.lng === 'number'
+        && isFinite(saved.map.lat) && isFinite(saved.map.lng)
+        && saved.map.lat > -85 && saved.map.lat < 85
+        && saved.map.lng > -180 && saved.map.lng < 180) {
+      map = { lat: saved.map.lat, lng: saved.map.lng };
+    }
+
+    var customPlaces = [];
+    if (Array.isArray(saved.customPlaces)) {
+      saved.customPlaces.forEach(function (place) {
+        if (!place || typeof place !== 'object') return;
+        if (typeof place.id !== 'string' || typeof place.name !== 'string') return;
+        if (CATEGORIES.indexOf(place.category) === -1) return;
+        var point = readPoint(place);
+        if (!point) return;
+        customPlaces.push({
+          id: place.id,
+          name: place.name,
+          category: place.category,
+          lat: point.lat,
+          lng: point.lng
+        });
+      });
+    }
+
+    var confirmed = null;
+    if (saved.confirmed && typeof saved.confirmed === 'object'
+        && typeof saved.confirmed.placeName === 'string'
+        && typeof saved.confirmed.reason === 'string'
+        && Array.isArray(saved.confirmed.names)) {
+      confirmed = saved.confirmed;
+    }
+
+    return {
+      dates: saved.dates,
+      participants: participants,
+      activeId: activeId,
+      chosenSlot: chosenSlot,
+      step: step,
+      map: map,
+      customPlaces: customPlaces,
+      confirmed: confirmed
+    };
+  } catch (error) {
+    return emptyState();
+  }
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    // 저장에 실패해도 화면은 그대로 쓴다
+  }
+}
+
+/* ---------- 참여자 ---------- */
+
+function activeParticipant() {
+  for (var i = 0; i < state.participants.length; i++) {
+    if (state.participants[i].id === state.activeId) return state.participants[i];
+  }
+  return null;
+}
+
+function showNotice(message) {
+  document.getElementById('notice').textContent = message;
+}
+
+function addParticipant() {
+  var input = document.getElementById('nameInput');
+  var name = input.value.trim();
+  if (!name) {
+    showNotice('이름을 넣어 주세요');
+    return;
+  }
+  if (state.participants.length >= MAX_PARTICIPANTS) {
+    showNotice('참여자는 여섯 명이 최대입니다');
+    return;
+  }
+
+  var person = {
+    id: String(Date.now()) + String(Math.random()).slice(2, 8),
+    name: name,
+    slots: [],
+    submitted: false,
+    origin: null,
+    vote: null
+  };
+  state.participants.push(person);
+  state.activeId = person.id;
+  input.value = '';
+  showNotice('');
+  save();
+  render();
+}
+
+function removeParticipant(id) {
+  state.participants = state.participants.filter(function (person) {
+    return person.id !== id;
+  });
+  if (state.activeId === id) {
+    state.activeId = state.participants.length > 0 ? state.participants[0].id : null;
+  }
+  showNotice('');
+  save();
+  render();
+}
+
+/* ---------- 시간 칠하기 ---------- */
+
+function paintCell(person, key, mode, cell) {
+  var index = person.slots.indexOf(key);
+  if (mode === 'paint' && index === -1) {
+    person.slots.push(key);
+  } else if (mode === 'erase' && index !== -1) {
+    person.slots.splice(index, 1);
+  }
+  cell.className = person.slots.indexOf(key) === -1 ? 'cell' : 'cell on';
+  renderCount();
+}
+
+function toggleGroup(keys) {
+  var person = activeParticipant();
+  if (!person) return;
+
+  var allOn = keys.every(function (key) { return person.slots.indexOf(key) !== -1; });
+  keys.forEach(function (key) {
+    var index = person.slots.indexOf(key);
+    if (allOn && index !== -1) person.slots.splice(index, 1);
+    if (!allOn && index === -1) person.slots.push(key);
+  });
+  save();
+  render();
+}
+
+function submitSlots() {
+  var person = activeParticipant();
+  if (!person) return;
+  person.submitted = true;
+  save();
+  render();
+}
+
+/* ---------- 지도 ---------- */
+
+function worldSize() {
+  return TILE_SIZE * Math.pow(2, MAP_ZOOM);
+}
+
+function lngToWorldX(lng) {
+  return (lng + 180) / 360 * worldSize();
+}
+
+function latToWorldY(lat) {
+  var sin = Math.sin(lat * Math.PI / 180);
+  return (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * worldSize();
+}
+
+function worldXToLng(x) {
+  return x / worldSize() * 360 - 180;
+}
+
+function worldYToLat(y) {
+  var n = Math.PI - 2 * Math.PI * y / worldSize();
+  return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+function mapSize() {
+  var map = document.getElementById('map');
+  return {
+    width: map.clientWidth || MAP_WIDTH,
+    height: map.clientHeight || MAP_HEIGHT
+  };
+}
+
+function mapTopLeft() {
+  var size = mapSize();
+  return {
+    x: lngToWorldX(state.map.lng) - size.width / 2,
+    y: latToWorldY(state.map.lat) - size.height / 2
+  };
+}
+
+function metersBetween(a, b) {
+  var midLat = (a.lat + b.lat) / 2 * Math.PI / 180;
+  var dx = (b.lng - a.lng) * Math.PI / 180 * Math.cos(midLat) * 6371000;
+  var dy = (b.lat - a.lat) * Math.PI / 180 * 6371000;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function walkMinutes(from, to) {
+  return Math.max(1, Math.round(metersBetween(from, to) / 67));
+}
+
+function nearestRegion(point) {
+  var best = null;
+  REGIONS.forEach(function (row) {
+    var region = { name: row[0], lat: row[1], lng: row[2], lists: row.slice(3) };
+    var meters = metersBetween(point, region);
+    if (!best || meters < best.meters) best = { region: region, meters: meters };
+  });
+  return best ? best.region : null;
+}
+
+function regionPlaces(region) {
+  var places = [];
+  CATEGORIES.forEach(function (category, categoryIndex) {
+    var names = (region.lists[categoryIndex] || '').split('|');
+    names.forEach(function (name, index) {
+      var offset = PLACE_OFFSETS[categoryIndex * 4 + index];
+      if (!offset) return;
+      places.push({
+        id: region.name + ':' + category + ':' + index,
+        name: name,
+        category: category,
+        lat: region.lat + offset[0],
+        lng: region.lng + offset[1]
+      });
+    });
+  });
+  return places;
+}
+
+function allPlaces() {
+  var mid = midpoint();
+  if (!mid) return [];
+
+  var region = nearestRegion(mid);
+  return regionPlaces(region).concat(state.customPlaces);
+}
+
+function midpoint() {
+  var placed = state.participants.filter(function (person) { return person.origin; });
+  if (placed.length < 2) return null;
+
+  var lat = 0;
+  var lng = 0;
+  placed.forEach(function (person) {
+    lat += person.origin.lat;
+    lng += person.origin.lng;
+  });
+  return { lat: lat / placed.length, lng: lng / placed.length };
+}
+
+function addPin(layer, corner, point, label, extra) {
+  var pin = document.createElement('div');
+  pin.className = extra ? 'pin ' + extra : 'pin';
+  pin.style.left = (lngToWorldX(point.lng) - corner.x) + 'px';
+  pin.style.top = (latToWorldY(point.lat) - corner.y) + 'px';
+  pin.textContent = label;
+  layer.appendChild(pin);
+}
+
+function renderPins(layer, corner) {
+  state.participants.forEach(function (person) {
+    if (person.origin) addPin(layer, corner, person.origin, person.name, '');
+  });
+
+  var mid = midpoint();
+  if (mid) addPin(layer, corner, mid, '★ 중간지점', 'mid');
+
+  var info = document.getElementById('mapInfo');
+  var placed = state.participants.filter(function (person) { return person.origin; }).length;
+  if (mid) {
+    info.className = 'map-info';
+    info.textContent = '출발지 ' + placed + '명의 중간지점입니다';
+  } else {
+    info.className = 'map-info empty';
+    info.textContent = '중간지점은 출발지를 찍은 사람이 두 명 이상일 때 나옵니다';
+  }
+}
+
+function votersOf(placeId) {
+  return state.participants
+    .filter(function (person) { return person.vote === placeId; })
+    .map(function (person) { return person.name; });
+}
+
+function castVote(placeId) {
+  var person = activeParticipant();
+  if (!person) {
+    showNotice('먼저 참여자를 추가해 주세요');
+    return;
+  }
+  person.vote = placeId;
+  showNotice('');
+  save();
+  render();
+}
+
+function confirmMeetup() {
+  if (!state.chosenSlot) {
+    showNotice('먼저 ① 단계에서 시간 후보를 고르세요');
+    return;
+  }
+
+  var mid = midpoint();
+  var places = allPlaces();
+  if (!mid || places.length === 0) {
+    showNotice('먼저 출발지를 두 명 이상 찍어 주세요');
+    return;
+  }
+
+  var counted = places.map(function (place) {
+    return { place: place, votes: votersOf(place.id).length };
+  });
+  var most = 0;
+  counted.forEach(function (row) { if (row.votes > most) most = row.votes; });
+
+  var leaders = counted.filter(function (row) { return row.votes === most; });
+  leaders.sort(function (a, b) {
+    return metersBetween(mid, a.place) - metersBetween(mid, b.place);
+  });
+  var winner = leaders[0];
+
+  var reason;
+  if (most === 0) {
+    reason = '아무도 투표하지 않아, 중간지점에서 가장 가까운 곳으로 자동으로 정했습니다';
+  } else if (leaders.length > 1) {
+    reason = '표가 ' + most + '표로 같아, 중간지점에서 가장 가까운 곳으로 골랐습니다';
+  } else {
+    reason = '가장 많은 표(' + most + '표)를 받았습니다';
+  }
+
+  state.confirmed = {
+    date: state.chosenSlot.date,
+    hour: state.chosenSlot.hour,
+    placeName: winner.place.name,
+    placeCategory: winner.place.category,
+    walk: walkMinutes(mid, winner.place),
+    names: state.participants.map(function (person) { return person.name; }),
+    reason: reason
+  };
+  state.step = 3;
+  showNotice('');
+  save();
+  render();
+}
+
+function cancelConfirm() {
+  state.confirmed = null;
+  state.step = 2;
+  save();
+  render();
+}
+
+function resetAll() {
+  state = emptyState();
+  categoryFilter = '전체';
+  pickingPlace = false;
+  save();
+  render();
+}
+
+function renderConfirm() {
+  var box = document.getElementById('confirmBox');
+  box.textContent = '';
+
+  var done = state.confirmed;
+  if (!done) {
+    var none = document.createElement('p');
+    none.className = 'empty';
+    none.textContent = '아직 확정된 약속이 없습니다';
+    box.appendChild(none);
+    return;
+  }
+
+  var panel = document.createElement('div');
+  panel.className = 'confirmed';
+
+  var list = document.createElement('dl');
+  [
+    ['시간', shortLabel(done.date) + ' ' + weekdayOf(done.date) + '요일 ' + done.hour + '시'],
+    ['장소', done.placeName + ' (' + done.placeCategory + ', 중간지점에서 도보 ' + done.walk + '분)'],
+    ['참여자', done.names.length > 0 ? done.names.join(', ') : '없음']
+  ].forEach(function (pair) {
+    var term = document.createElement('dt');
+    term.textContent = pair[0];
+    list.appendChild(term);
+
+    var value = document.createElement('dd');
+    value.textContent = pair[1];
+    list.appendChild(value);
+  });
+  panel.appendChild(list);
+
+  var reason = document.createElement('p');
+  reason.className = 'reason';
+  reason.textContent = done.reason;
+  panel.appendChild(reason);
+
+  var actions = document.createElement('div');
+  actions.className = 'confirm-actions';
+
+  var cancel = document.createElement('button');
+  cancel.textContent = '확정 취소';
+  cancel.addEventListener('click', cancelConfirm);
+  actions.appendChild(cancel);
+
+  var reset = document.createElement('button');
+  reset.className = 'danger';
+  reset.textContent = '처음부터 다시 시작';
+  reset.addEventListener('click', resetAll);
+  actions.appendChild(reset);
+
+  panel.appendChild(actions);
+  box.appendChild(panel);
+}
+
+function renderPlaces() {
+  var title = document.getElementById('regionName');
+  var note = document.getElementById('regionNote');
+  var filters = document.getElementById('categoryFilter');
+  var cards = document.getElementById('placeCards');
+  title.textContent = '';
+  note.textContent = '';
+  filters.textContent = '';
+  cards.textContent = '';
+
+  var mid = midpoint();
+  if (!mid) {
+    title.textContent = '장소 후보';
+    note.className = 'region-note empty';
+    note.textContent = '출발지를 찍은 사람이 두 명 이상이어야 후보가 보입니다';
+    return;
+  }
+
+  var region = nearestRegion(mid);
+  title.textContent = region.name;
+  note.className = 'region-note';
+  note.textContent = '중간지점에서 가장 가까운 지역입니다';
+
+  ['전체'].concat(CATEGORIES).forEach(function (category) {
+    var button = document.createElement('button');
+    button.textContent = category;
+    if (categoryFilter === category) button.className = 'active';
+    button.addEventListener('click', function () {
+      categoryFilter = category;
+      render();
+    });
+    filters.appendChild(button);
+  });
+
+  allPlaces().forEach(function (place) {
+    if (categoryFilter !== '전체' && place.category !== categoryFilter) return;
+
+    var person = activeParticipant();
+    var voters = votersOf(place.id);
+    var card = document.createElement('div');
+    card.className = (person && person.vote === place.id) ? 'card voted' : 'card';
+
+    var name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = place.name;
+    card.appendChild(name);
+
+    var chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = place.category;
+    card.appendChild(chip);
+
+    var walk = document.createElement('span');
+    walk.className = 'walk';
+    walk.textContent = '도보 ' + walkMinutes(mid, place) + '분';
+    card.appendChild(walk);
+
+    if (voters.length > 0) {
+      var who = document.createElement('span');
+      who.className = 'voters';
+      who.textContent = voters.join(', ');
+      card.appendChild(who);
+    }
+
+    var votes = document.createElement('span');
+    votes.className = 'votes';
+    votes.textContent = voters.length + '표';
+    card.appendChild(votes);
+
+    card.addEventListener('click', function () { castVote(place.id); });
+
+    cards.appendChild(card);
+  });
+}
+
+function showPlaceHint(message, arming) {
+  var hint = document.getElementById('placeHint');
+  hint.className = arming ? 'arming' : 'hint';
+  hint.textContent = message;
+}
+
+function startAddPlace() {
+  var name = document.getElementById('placeName').value.trim();
+  if (!name) {
+    pickingPlace = false;
+    showPlaceHint('이름을 넣어 주세요', false);
+    return;
+  }
+  pickingPlace = true;
+  showPlaceHint('지도에서 그 장소의 자리를 클릭하세요', true);
+}
+
+function addPlaceAt(point) {
+  var nameInput = document.getElementById('placeName');
+  var name = nameInput.value.trim();
+  if (!name) {
+    pickingPlace = false;
+    showPlaceHint('이름을 넣어 주세요', false);
+    return;
+  }
+
+  state.customPlaces.push({
+    id: 'custom:' + Date.now() + String(Math.random()).slice(2, 8),
+    name: name,
+    category: document.getElementById('placeCategory').value,
+    lat: point.lat,
+    lng: point.lng
+  });
+
+  pickingPlace = false;
+  nameInput.value = '';
+  save();
+  render();
+  showPlaceHint('추가했습니다', false);
+}
+
+function pointFromEvent(event) {
+  var rect = document.getElementById('map').getBoundingClientRect();
+  var corner = mapTopLeft();
+  return {
+    lat: worldYToLat(corner.y + (event.clientY - rect.top)),
+    lng: worldXToLng(corner.x + (event.clientX - rect.left))
+  };
+}
+
+function setOrigin(event) {
+  if (pickingPlace) {
+    addPlaceAt(pointFromEvent(event));
+    return;
+  }
+
+  var person = activeParticipant();
+  if (!person) {
+    showNotice('먼저 참여자를 추가해 주세요');
+    return;
+  }
+
+  person.origin = pointFromEvent(event);
+  showNotice('');
+  save();
+  render();
+}
+
+function renderMap() {
+  var layer = document.getElementById('mapLayer');
+  layer.textContent = '';
+  layer.style.transform = 'translate(0px, 0px)';
+
+  var corner = mapTopLeft();
+  var size = mapSize();
+  var lastIndex = Math.pow(2, MAP_ZOOM);
+  var firstCol = Math.floor((corner.x - TILE_SIZE) / TILE_SIZE);
+  var lastCol = Math.floor((corner.x + size.width + TILE_SIZE) / TILE_SIZE);
+  var firstRow = Math.floor((corner.y - TILE_SIZE) / TILE_SIZE);
+  var lastRow = Math.floor((corner.y + size.height + TILE_SIZE) / TILE_SIZE);
+
+  for (var col = firstCol; col <= lastCol; col++) {
+    for (var row = firstRow; row <= lastRow; row++) {
+      if (row < 0 || row >= lastIndex) continue;
+      var wrapped = ((col % lastIndex) + lastIndex) % lastIndex;
+
+      var tile = document.createElement('img');
+      tile.className = 'tile';
+      tile.alt = '';
+      tile.draggable = false;
+      tile.style.left = (col * TILE_SIZE - corner.x) + 'px';
+      tile.style.top = (row * TILE_SIZE - corner.y) + 'px';
+      tile.addEventListener('error', function () {
+        this.style.visibility = 'hidden';
+      });
+      tile.src = 'https://tile.openstreetmap.org/' + MAP_ZOOM + '/' + wrapped + '/' + row + '.png';
+      layer.appendChild(tile);
+    }
+  }
+
+  renderPins(layer, corner);
+}
+
+function startMapDrag(event) {
+  event.preventDefault();
+  mapDrag = { startX: event.clientX, startY: event.clientY, dx: 0, dy: 0 };
+  document.getElementById('map').className = 'map grabbing';
+}
+
+function moveMapDrag(event) {
+  if (!mapDrag) return;
+  mapDrag.dx = event.clientX - mapDrag.startX;
+  mapDrag.dy = event.clientY - mapDrag.startY;
+  document.getElementById('mapLayer').style.transform =
+    'translate(' + mapDrag.dx + 'px, ' + mapDrag.dy + 'px)';
+}
+
+function endMapDrag(event) {
+  if (!mapDrag) return;
+  var moved = mapDrag;
+  mapDrag = null;
+  document.getElementById('map').className = 'map';
+
+  if (Math.abs(moved.dx) < 4 && Math.abs(moved.dy) < 4) {
+    setOrigin(event);
+    return;
+  }
+
+  var corner = mapTopLeft();
+  var size = mapSize();
+  var centerX = corner.x + size.width / 2 - moved.dx;
+  var centerY = corner.y + size.height / 2 - moved.dy;
+  state.map = { lat: worldYToLat(centerY), lng: worldXToLng(centerX) };
+  save();
+  renderMap();
+}
+
+/* ---------- 그리기 ---------- */
+
+function goToStep(step) {
+  state.step = step;
+  showNotice('');
+  save();
+  render();
+}
+
+function renderSteps() {
+  var steps = document.getElementById('steps');
+  steps.textContent = '';
+
+  [[1, '① 시간'], [2, '② 장소'], [3, '③ 확정']].forEach(function (pair) {
+    var button = document.createElement('button');
+    button.textContent = pair[1];
+    if (state.step === pair[0]) button.className = 'active';
+    button.addEventListener('click', function () { goToStep(pair[0]); });
+    steps.appendChild(button);
+  });
+
+  document.getElementById('peopleArea').style.display = state.step === 3 ? 'none' : '';
+  document.getElementById('step1').style.display = state.step === 1 ? '' : 'none';
+  document.getElementById('step2').style.display = state.step === 2 ? '' : 'none';
+  document.getElementById('step3').style.display = state.step === 3 ? '' : 'none';
+}
+
+function renderTabs() {
+  var tabs = document.getElementById('tabs');
+  tabs.textContent = '';
+
+  state.participants.forEach(function (person) {
+    var tab = document.createElement('div');
+    tab.className = person.id === state.activeId ? 'tab active' : 'tab';
+    tab.addEventListener('click', function () {
+      state.activeId = person.id;
+      showNotice('');
+      save();
+      render();
+    });
+
+    var name = document.createElement('span');
+    name.textContent = person.name;
+    tab.appendChild(name);
+
+    var mark = document.createElement('span');
+    mark.className = 'state';
+    mark.textContent = person.submitted ? '입력 완료' : '미입력';
+    tab.appendChild(mark);
+
+    var remove = document.createElement('span');
+    remove.className = 'remove';
+    remove.textContent = '×';
+    remove.title = person.name + ' 지우기';
+    remove.addEventListener('click', function (event) {
+      event.stopPropagation();
+      removeParticipant(person.id);
+    });
+    tab.appendChild(remove);
+
+    tabs.appendChild(tab);
+  });
+}
+
+function renderCount() {
+  var person = activeParticipant();
+  var count = document.getElementById('count');
+  if (person && count) count.textContent = person.slots.length + '칸 선택';
+}
+
+function renderToolbar() {
+  var toolbar = document.getElementById('toolbar');
+  toolbar.textContent = '';
+
+  var person = activeParticipant();
+  if (!person) return;
+
+  var count = document.createElement('span');
+  count.id = 'count';
+  count.textContent = person.slots.length + '칸 선택';
+  toolbar.appendChild(count);
+
+  var submit = document.createElement('button');
+  submit.textContent = person.slots.length === 0 ? '전부 안 됨으로 저장' : '이 시간표 저장';
+  submit.addEventListener('click', submitSlots);
+  toolbar.appendChild(submit);
+
+  var hint = document.createElement('span');
+  hint.className = 'hint';
+  hint.textContent = '드래그로 칠하고 지웁니다. 날짜·시간 이름을 누르면 한 줄이 통째로 바뀝니다.';
+  toolbar.appendChild(hint);
+}
+
+function renderGrid() {
+  var grid = document.getElementById('grid');
+  grid.textContent = '';
+
+  var person = activeParticipant();
+  if (!person) return;
+
+  var corner = document.createElement('div');
+  corner.className = 'head corner';
+  grid.appendChild(corner);
+
+  state.dates.forEach(function (date) {
+    var head = document.createElement('div');
+    head.className = 'head';
+    head.textContent = shortLabel(date) + ' ' + weekdayOf(date);
+    head.title = date + ' 하루 전체';
+    head.addEventListener('click', function () {
+      var keys = [];
+      for (var hour = START_HOUR; hour < END_HOUR; hour++) keys.push(slotKey(date, hour));
+      toggleGroup(keys);
+    });
+    grid.appendChild(head);
+  });
+
+  for (var hour = START_HOUR; hour < END_HOUR; hour++) {
+    var label = document.createElement('div');
+    label.className = 'hour';
+    label.textContent = hour + '시';
+    label.title = hour + '시 일곱 날 전체';
+    (function (rowHour) {
+      label.addEventListener('click', function () {
+        var keys = state.dates.map(function (date) { return slotKey(date, rowHour); });
+        toggleGroup(keys);
+      });
+    })(hour);
+    grid.appendChild(label);
+
+    state.dates.forEach(function (date) {
+      var currentHour = hour;
+      var key = slotKey(date, currentHour);
+      var cell = document.createElement('div');
+      cell.className = person.slots.indexOf(key) === -1 ? 'cell' : 'cell on';
+
+      cell.addEventListener('mousedown', function (event) {
+        event.preventDefault();
+        dragging = true;
+        dragMode = person.slots.indexOf(key) === -1 ? 'paint' : 'erase';
+        paintCell(person, key, dragMode, cell);
+      });
+      cell.addEventListener('mouseenter', function () {
+        if (dragging) paintCell(person, key, dragMode, cell);
+      });
+
+      grid.appendChild(cell);
+    });
+  }
+}
+
+function topCandidates() {
+  var list = [];
+
+  state.dates.forEach(function (date) {
+    for (var hour = START_HOUR; hour < END_HOUR; hour++) {
+      var key = slotKey(date, hour);
+      var count = 0;
+      var missing = [];
+      state.participants.forEach(function (person) {
+        if (person.slots.indexOf(key) !== -1) count++;
+        else missing.push(person.name);
+      });
+      if (count > 0) list.push({ date: date, hour: hour, count: count, missing: missing });
+    }
+  });
+
+  list.sort(function (a, b) {
+    if (b.count !== a.count) return b.count - a.count;
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return a.hour - b.hour;
+  });
+
+  return list.slice(0, 3);
+}
+
+function isChosen(candidate) {
+  return !!state.chosenSlot
+    && state.chosenSlot.date === candidate.date
+    && state.chosenSlot.hour === candidate.hour;
+}
+
+function renderCandidates() {
+  var box = document.getElementById('candidates');
+  box.textContent = '';
+
+  var submitted = state.participants.filter(function (person) { return person.submitted; });
+  if (submitted.length === 0) {
+    var none = document.createElement('p');
+    none.className = 'empty';
+    none.textContent = '아직 입력한 사람이 없습니다';
+    box.appendChild(none);
+    return;
+  }
+
+  var candidates = topCandidates();
+  if (candidates.length === 0) {
+    var blank = document.createElement('p');
+    blank.className = 'empty';
+    blank.textContent = '되는 시간을 칠한 사람이 없습니다';
+    box.appendChild(blank);
+    return;
+  }
+
+  candidates.forEach(function (candidate) {
+    var chosen = isChosen(candidate);
+    var card = document.createElement('div');
+    card.className = chosen ? 'card chosen' : 'card';
+
+    var when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = shortLabel(candidate.date) + ' ' + weekdayOf(candidate.date)
+      + ' ' + candidate.hour + '시';
+    card.appendChild(when);
+
+    var who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = state.participants.length + '명 중 ' + candidate.count + '명';
+    card.appendChild(who);
+
+    if (candidate.missing.length > 0) {
+      var miss = document.createElement('span');
+      miss.className = 'miss';
+      miss.textContent = '못 오는 사람: ' + candidate.missing.join(', ');
+      card.appendChild(miss);
+    }
+
+    if (chosen) {
+      var mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.textContent = '✓ 선택함';
+      card.appendChild(mark);
+    }
+
+    card.addEventListener('click', function () {
+      state.chosenSlot = { date: candidate.date, hour: candidate.hour };
+      save();
+      render();
+    });
+
+    box.appendChild(card);
+  });
+}
+
+function render() {
+  renderSteps();
+  renderTabs();
+  renderToolbar();
+  renderGrid();
+  renderCandidates();
+  if (state.step === 2) {
+    renderMap();
+    renderPlaces();
+  }
+  if (state.step === 3) renderConfirm();
+}
+
+/* ---------- 시작 ---------- */
+
+document.getElementById('addButton').addEventListener('click', addParticipant);
+document.getElementById('nameInput').addEventListener('keydown', function (event) {
+  if (event.key === 'Enter') addParticipant();
+});
+CATEGORIES.forEach(function (category) {
+  var option = document.createElement('option');
+  option.value = category;
+  option.textContent = category;
+  document.getElementById('placeCategory').appendChild(option);
+});
+document.getElementById('placeAdd').addEventListener('click', startAddPlace);
+document.getElementById('confirmButton').addEventListener('click', confirmMeetup);
+
+document.getElementById('map').addEventListener('mousedown', startMapDrag);
+document.addEventListener('mousemove', moveMapDrag);
+document.addEventListener('mouseup', endMapDrag);
+document.addEventListener('mouseup', function () {
+  if (!dragging) return;
+  dragging = false;
+  save();
+  render();
+});
+
+render();
+</script>
+
+</body>
+</html>
